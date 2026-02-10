@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precision Trace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        :root { --ruby: #e11d48; --ruby-dark: #be123c; }
+        body { font-family: 'Inter', sans-serif; background: #ffffff; color: #1a1a1a; overflow-x: hidden; }
+        .sharp-card { background: #ffffff; border: 2px solid #1a1a1a; }
+        canvas { touch-action: none; cursor: crosshair; background: #fafafa; border: 1px solid #ddd; }
+        .btn-primary { background-color: var(--ruby); color: white; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; transition: background 0.2s; }
+        .btn-primary:hover { background-color: var(--ruby-dark); }
+        .btn-primary:disabled { background-color: #cbd5e1; cursor: not-allowed; border-color: #cbd5e1; }
+        .tab-btn { border: 1px solid #ddd; font-weight: 700; color: #666; background: #f8fafc; }
+        .tab-btn.active { background-color: var(--ruby); color: white; border-color: var(--ruby); }
+        .metric-row { display: flex; justify-content: space-between; font-size: 0.75rem; border-bottom: 1px solid #eee; padding: 4px 0; }
+        .metric-label { opacity: 0.7; font-weight: 500; }
+        .metric-value { font-weight: 900; }
+        .grade-box { padding: 12px; border: 3px solid #1a1a1a; transition: all 0.3s; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #eee; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 8px; background: var(--ruby); margin-top: -6px; }
+        .switch-container { position: relative; width: 40px; height: 20px; border: 2px solid #1a1a1a; }
+        .switch-input { opacity: 0; width: 0; height: 0; }
+        .switch-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #eee; transition: .2s; }
+        .switch-slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 2px; bottom: 2px; background: #1a1a1a; transition: .2s; }
+        .switch-input:checked + .switch-slider { background: var(--ruby); }
+        .switch-input:checked + .switch-slider:before { transform: translateX(20px); background: white; }
+        @keyframes rainbowText { 0% { color: #ff0000; } 20% { color: #ff8800; } 40% { color: #ffff00; } 60% { color: #00ff00; } 80% { color: #0000ff; } 100% { color: #8800ff; } }
+        .pro-artist { animation: rainbowText 1.5s linear infinite; }
+        #test-result-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; display: none; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-2 pb-16">
+
+    <div id="error-toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 font-black text-xs border-2 border-rose-600 hidden z-[100]">STROKE INVALID - TOO SHORT</div>
+
+    <div id="test-result-overlay">
+        <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Skill Assessment Complete</h2>
+        <div id="final-test-grade-box" class="grade-box bg-white max-w-xs w-full text-center">
+             <h1 id="final-test-title" class="text-4xl font-black uppercase mb-1">...</h1>
+             <div id="final-test-score" class="text-6xl font-black mb-6">0%</div>
+             <button onclick="showMenu()" class="w-full py-3 btn-primary text-xs">BACK TO MENU</button>
+        </div>
+    </div>
+
+    <div id="menu-screen" class="max-w-md w-full sharp-card p-6 text-center shadow-2xl">
+        <h1 class="text-3xl font-black tracking-tighter text-slate-900 mb-1 uppercase italic leading-none">Line Confidence Trainer</h1>
+        <p id="menu-subtitle" class="text-[10px] font-bold text-rose-500 mb-6 uppercase tracking-widest">Art Hell - Circle I - Straight Lines</p>
+        
+        <div class="space-y-2">
+            <button onclick="startMode('practice')" class="w-full py-3 btn-primary text-sm">Practice Session</button>
+            <button onclick="startMode('test')" class="w-full py-3 border-2 border-slate-900 text-slate-900 font-bold uppercase tracking-widest text-xs">Test (10 Strokes)</button>
+        </div>
+
+        <div class="mt-6 pt-4 border-t-2 border-slate-100 text-left">
+            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Stroke Configuration</h3>
+            <div class="grid grid-cols-3 gap-1 mb-4">
+                <button onclick="setModeTab('line')" class="tab-btn py-1 text-[10px] active" id="tab-line">LINE</button>
+                <button onclick="setModeTab('arc')" class="tab-btn py-1 text-[10px]" id="tab-arc">ARC</button>
+                <button onclick="setModeTab('bezier')" class="tab-btn py-1 text-[10px]" id="tab-bezier">BEZIER</button>
+            </div>
+            
+            <div class="space-y-4">
+                <div id="menu-intensity-config" class="hidden">
+                    <div class="flex justify-between text-[10px] font-black uppercase mb-1">
+                        <label class="text-rose-600">Shape Intensity</label>
+                        <span id="menu-steep-val" class="font-black text-rose-600">45%</span>
+                    </div>
+                    <input type="range" id="menu-steep-slider" min="1" max="100" value="45" oninput="updateMenuSteepVal(this.value)">
+                </div>
+                <div id="line-scoring-option">
+                    <label class="flex items-center justify-between cursor-pointer">
+                        <span class="text-[11px] font-bold uppercase">Length Scoring</span>
+                        <div class="switch-container">
+                            <input type="checkbox" id="line-length-toggle" class="switch-input">
+                            <span class="switch-slider"></span>
+                        </div>
+                    </label>
+                </div>
+                <label class="flex items-center justify-between cursor-pointer">
+                    <span class="text-[11px] font-bold uppercase">Dynamic Positioning</span>
+                    <div class="switch-container">
+                        <input type="checkbox" id="rand-pos-toggle" checked class="switch-input">
+                        <span class="switch-slider"></span>
+                    </div>
+                </label>
+                <label class="flex items-center justify-between cursor-pointer">
+                    <span class="text-[11px] font-bold uppercase">Ghost Trace</span>
+                    <div class="switch-container">
+                        <input type="checkbox" id="show-correct-toggle" checked class="switch-input">
+                        <span class="switch-slider"></span>
+                    </div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-screen" class="max-w-[1000px] w-full hidden">
+        <div class="relative flex items-center justify-between mb-4 px-1 h-8">
+            <button onclick="showMenu()" class="text-rose-600 font-black text-[10px] uppercase border-2 border-rose-600 px-3 py-1 z-10">← EXIT</button>
+            
+            <div id="counter-container" class="absolute left-1/2 -translate-x-1/2 text-[11px] font-black uppercase tracking-tighter">
+                <span id="counter-label">STROKES:</span> <span id="ref-attempt-count" class="text-rose-600">0</span>
+            </div>
+
+            <div id="mode-label" class="text-slate-400 text-[10px] font-black uppercase tracking-widest z-10">PRACTICE</div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-4 items-start justify-center">
+            <div class="sharp-card p-4">
+                <div class="flex justify-between items-center mb-2 h-6">
+                    <span class="text-[10px] font-black text-slate-400 uppercase">Reference</span>
+                    <span id="target-info" class="text-[10px] font-black uppercase text-rose-600">--</span>
+                </div>
+                <canvas id="refCanvas" width="450" height="450"></canvas>
+                <div id="practice-adjustments" class="mt-4 pt-4 border-t border-slate-200">
+                    <div class="flex justify-between text-[9px] font-black text-slate-400 uppercase mb-3">
+                        <span>Adjust Reference</span>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <div class="flex justify-between text-[10px] font-bold uppercase mb-1">
+                                <span id="adj-label-1">Angle</span>
+                                <span id="adj-val-1">0</span>
+                            </div>
+                            <input type="range" id="adj-slider-1" min="0" max="360" value="0">
+                        </div>
+                        <div id="adj-row-2">
+                            <div class="flex justify-between text-[10px] font-bold uppercase mb-1">
+                                <span id="adj-label-2">Sweep</span>
+                                <span id="adj-val-2">0</span>
+                            </div>
+                            <input type="range" id="adj-slider-2" min="1" max="100" value="45">
+                        </div>
+                        <div id="adj-row-3" class="hidden">
+                            <div class="flex justify-between text-[10px] font-bold uppercase mb-1">
+                                <span id="adj-label-3">Radius</span>
+                                <span id="adj-val-3">0</span>
+                            </div>
+                            <input type="range" id="adj-slider-3" min="60" max="600" value="100">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sharp-card p-4">
+                <div class="flex justify-between items-center mb-2 h-6">
+                    <span class="text-[10px] font-black text-slate-400 uppercase">Input</span>
+                    <button id="next-btn" onclick="nextRound()" class="bg-rose-600 text-white text-[10px] font-black px-3 py-1 disabled:opacity-50 disabled:cursor-not-allowed">NEXT (R)</button>
+                </div>
+                <div class="relative">
+                    <canvas id="drawCanvas" width="450" height="450"></canvas>
+                    <div id="debug-overlay" class="absolute top-2 left-2 text-[10px] font-mono text-rose-500 pointer-events-none bg-white/80 p-1 hidden"></div>
+                </div>
+                <div id="feedback-box" class="mt-4 opacity-0 transition-opacity">
+                    <div id="grade-container" class="grade-box bg-white">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 id="feedback-title" class="text-2xl font-black uppercase"></h2>
+                            <div id="final-score-pill" class="text-4xl font-black">0%</div>
+                        </div>
+                        <div class="border-t-2 border-slate-900 pt-2 space-y-1">
+                            <div class="metric-row"><span class="metric-label">PATH ACCURACY</span><span class="metric-value" id="m1-val">0%</span></div>
+                            <div class="metric-row"><span class="metric-label">STABILITY</span><span class="metric-value" id="m2-val">0%</span></div>
+                            <div id="m3-row" class="metric-row hidden"><span class="metric-label">LENGTH PRECISION</span><span class="metric-value" id="m3-val">0%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-12 flex items-center justify-center space-x-3 opacity-60 hover:opacity-100 transition-opacity">
+        <img src="https://i.imgur.com/m482x0A.png" alt="pyxidataa" class="w-8 h-8 rounded-full border border-slate-200">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            This website was made by 
+            <a href="https://pyxidata.github.io/main-page-v5/" target="_blank" class="text-rose-600 hover:underline">pyxidataa</a>
+        </p>
+    </div>
+
+    <script>
+        const refCanvas = document.getElementById('refCanvas'), drawCanvas = document.getElementById('drawCanvas');
+        const refCtx = refCanvas.getContext('2d'), drawCtx = drawCanvas.getContext('2d');
+        const nextBtn = document.getElementById('next-btn');
+        const CANVAS_SIZE = 450, PADDING = 40;
+        let isDrawing = false, points = [], attemptLocked = false, refAttemptCount = 0;
+        let currentMode = 'practice', modeType = 'line', testScores = [];
+        let hasDrawnInCurrentRound = false;
+        const TEST_MAX_STEPS = 10;
+        let arcParams, bezierParams, lineParams;
+
+        const feedbackBox = document.getElementById('feedback-box'), gradeContainer = document.getElementById('grade-container');
+        const feedbackTitle = document.getElementById('feedback-title'), finalScorePill = document.getElementById('final-score-pill');
+        const adjSlider1 = document.getElementById('adj-slider-1'), adjSlider2 = document.getElementById('adj-slider-2'), adjSlider3 = document.getElementById('adj-slider-3');
+        const adjVal1 = document.getElementById('adj-val-1'), adjVal2 = document.getElementById('adj-val-2'), adjVal3 = document.getElementById('adj-val-3');
+        const adjLabel1 = document.getElementById('adj-label-1'), adjLabel2 = document.getElementById('adj-label-2'), adjLabel3 = document.getElementById('adj-label-3');
+        const menuSteepSlider = document.getElementById('menu-steep-slider');
+        const menuSubtitle = document.getElementById('menu-subtitle');
+
+        function updateMenuSteepVal(val) { document.getElementById('menu-steep-val').innerText = val + "%"; }
+        
+        function setModeTab(type) {
+            modeType = type;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`tab-${type}`).classList.add('active');
+            document.getElementById('menu-intensity-config').classList.toggle('hidden', type === 'line');
+            document.getElementById('line-scoring-option').classList.toggle('hidden', type !== 'line');
+            if (type === 'line') menuSubtitle.innerText = "Art Hell - Circle I - Straight Lines";
+            else if (type === 'arc') menuSubtitle.innerText = "Art Hell - Circle II - Arcs";
+            else if (type === 'bezier') menuSubtitle.innerText = "Art Hell - Circle III - Bezier Curves";
+        }
+
+        function showMenu() {
+            document.getElementById('test-result-overlay').style.display = 'none';
+            document.getElementById('menu-screen').classList.remove('hidden');
+            document.getElementById('app-screen').classList.add('hidden');
+        }
+
+        function startMode(mode) {
+            currentMode = mode; 
+            testScores = []; 
+            refAttemptCount = 0;
+            hasDrawnInCurrentRound = false;
+            
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+            document.getElementById('mode-label').innerText = mode.toUpperCase();
+            document.getElementById('practice-adjustments').classList.toggle('hidden', mode === 'test');
+            
+            if (mode === 'test') {
+                document.getElementById('ref-attempt-count').innerText = "0/10";
+                nextBtn.disabled = true;
+            } else {
+                document.getElementById('ref-attempt-count').innerText = "0";
+                nextBtn.disabled = false;
+            }
+
+            nextRound(true);
+        }
+
+        function getGradingData(score) {
+            if (score >= 95) return { label: "PRO ARTIST", color: "var(--ruby)" };
+            if (score >= 85) return { label: "GREAT", color: "#3b82f6" };
+            if (score >= 75) return { label: "GOOD", color: "#22c55e" };
+            if (score >= 60) return { label: "DECENT", color: "#eab308" };
+            return { label: "POOR", color: "#f97316" };
+        }
+
+        function generateArcReference() {
+            bezierParams = null; lineParams = null;
+            const steep = parseInt(menuSteepSlider.value);
+            const baseSweep = (steep / 100) * 280 + 20; 
+            const sweepDeg = Math.floor(baseSweep + (Math.random() - 0.5) * 40);
+            const sweepRad = sweepDeg * (Math.PI / 180);
+            const availableSpace = CANVAS_SIZE - (PADDING * 2);
+            
+            // Higher minimum radius for narrow arcs to prevent extremely tight curves
+            const minRadiusForAngle = sweepDeg < 90 
+                ? 180 + (90 - sweepDeg) * 6 
+                : 100;
+            
+            let radius = minRadiusForAngle + Math.random() * 80;
+            
+            let centerX, centerY, startAngle, endAngle;
+            let fits = false, safety = 0;
+            const randPos = document.getElementById('rand-pos-toggle').checked;
+            while(!fits && safety < 100) {
+                safety++;
+                startAngle = Math.random() * Math.PI * 2;
+                endAngle = startAngle + sweepRad;
+                const midAngle = startAngle + (sweepRad / 2);
+                const distToSegmentCenter = radius * (Math.sin(sweepRad/2) / (sweepRad/2));
+                const offsetX = randPos ? (Math.random() - 0.5) * (availableSpace * 0.4) : 0;
+                const offsetY = randPos ? (Math.random() - 0.5) * (availableSpace * 0.4) : 0;
+                centerX = (CANVAS_SIZE/2) - Math.cos(midAngle) * distToSegmentCenter + offsetX;
+                centerY = (CANVAS_SIZE/2) - Math.sin(midAngle) * distToSegmentCenter + offsetY;
+                let minX = 1000, maxX = -1000, minY = 1000, maxY = -1000;
+                const checkPt = (a) => {
+                    const px = centerX + radius * Math.cos(a);
+                    const py = centerY + radius * Math.sin(a);
+                    minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+                    minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+                };
+                checkPt(startAngle); checkPt(endAngle);
+                for(let t=0; t<=1; t+=0.1) checkPt(startAngle + t*sweepRad);
+                if (minX > PADDING && maxX < CANVAS_SIZE - PADDING && minY > PADDING && maxY < CANVAS_SIZE - PADDING) fits = true;
+                else radius *= 0.95;
+            }
+            arcParams = { centerX, centerY, radius, startAngle, endAngle, sweepDeg, sweepRad };
+            adjSlider1.min = 0; adjSlider1.max = 360;
+            adjSlider1.value = Math.round(startAngle * 180 / Math.PI) % 360;
+            adjSlider2.min = 10; adjSlider2.max = 350;
+            adjSlider2.value = Math.round(sweepDeg);
+            adjSlider3.min = 40; adjSlider3.max = 800;
+            adjSlider3.value = Math.round(radius);
+            updateLabels(); drawRef();
+        }
+
+        function generateBezierReference() {
+            arcParams = null; lineParams = null;
+            const span = 150 + Math.random() * 200;
+            const steep = parseInt(menuSteepSlider.value);
+            const maxDev = (steep / 100 * 250 + 20);
+            const rotation = Math.random() * Math.PI * 2;
+            const randPos = document.getElementById('rand-pos-toggle').checked;
+            const cx = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*100 : 0);
+            const cy = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*100 : 0);
+            const rot = (x, y) => ({
+                x: cx + (x * Math.cos(rotation) - y * Math.sin(rotation)),
+                y: cy + (x * Math.sin(rotation) + y * Math.cos(rotation))
+            });
+            const p1 = rot(-span/2, 0);
+            const p2 = rot(-span/6, (Math.random()-0.5) * maxDev);
+            const p3 = rot(span/6, (Math.random()-0.5) * maxDev);
+            const p4 = rot(span/2, 0);
+            bezierParams = { points: [p1, p2, p3, p4], span, rotation, steep, cx, cy };
+            adjSlider1.min = 0; adjSlider1.max = 360;
+            adjSlider1.value = Math.round(rotation * 180 / Math.PI) % 360;
+            adjSlider2.min = 1; adjSlider2.max = 100;
+            adjSlider2.value = steep;
+            updateLabels(); drawRef();
+        }
+
+        function generateLineReference() {
+            arcParams = null; bezierParams = null;
+            const angle = Math.floor(Math.random() * 180);
+            const rad = (angle * Math.PI) / 180;
+            const length = 150 + Math.random() * 200;
+            const randPos = document.getElementById('rand-pos-toggle').checked;
+            const cx = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*150 : 0);
+            const cy = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*150 : 0);
+            let x1 = cx - (length/2) * Math.cos(rad), y1 = cy + (length/2) * Math.sin(rad);
+            let x2 = cx + (length/2) * Math.cos(rad), y2 = cy - (length/2) * Math.sin(rad);
+            lineParams = { start: {x: x1, y: y1}, end: {x: x2, y: y2}, length, angle, cx, cy };
+            adjSlider1.min = 0; adjSlider1.max = 360;
+            adjSlider1.value = Math.round(angle);
+            adjSlider2.min = 50; adjSlider2.max = 350;
+            adjSlider2.value = Math.round(length);
+            updateLabels(); drawRef();
+        }
+
+        function drawRef() {
+            refCtx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+            refCtx.beginPath(); refCtx.lineWidth = 6; refCtx.strokeStyle = '#1a1a1a'; refCtx.lineCap = 'round';
+            if(lineParams) {
+                refCtx.moveTo(lineParams.start.x, lineParams.start.y); refCtx.lineTo(lineParams.end.x, lineParams.end.y);
+                document.getElementById('target-info').innerText = `LINE ${Math.round(lineParams.angle)}° ${Math.round(lineParams.length)}px`;
+            } else if(arcParams) {
+                refCtx.arc(arcParams.centerX, arcParams.centerY, arcParams.radius, arcParams.startAngle, arcParams.endAngle);
+                document.getElementById('target-info').innerText = `ARC ${Math.round(arcParams.sweepDeg)}° R${Math.round(arcParams.radius)}`;
+            } else if(bezierParams) {
+                const p = bezierParams.points;
+                refCtx.moveTo(p[0].x, p[0].y); refCtx.bezierCurveTo(p[1].x, p[1].y, p[2].x, p[2].y, p[3].x, p[3].y);
+                document.getElementById('target-info').innerText = `BEZIER`;
+            }
+            refCtx.stroke();
+        }
+
+        function updateFromSliders() {
+            if(modeType === 'line') {
+                const angle = parseInt(adjSlider1.value);
+                const length = parseInt(adjSlider2.value);
+                const rad = (angle * Math.PI) / 180;
+                lineParams.angle = angle;
+                lineParams.length = length;
+                lineParams.start = { x: lineParams.cx - (length/2)*Math.cos(rad), y: lineParams.cy + (length/2)*Math.sin(rad) };
+                lineParams.end = { x: lineParams.cx + (length/2)*Math.cos(rad), y: lineParams.cy - (length/2)*Math.sin(rad) };
+            } else if(modeType === 'arc') {
+                arcParams.startAngle = parseInt(adjSlider1.value) * Math.PI / 180;
+                arcParams.sweepDeg = parseInt(adjSlider2.value);
+                arcParams.sweepRad = arcParams.sweepDeg * Math.PI / 180;
+                arcParams.endAngle = arcParams.startAngle + arcParams.sweepRad;
+                arcParams.radius = parseInt(adjSlider3.value);
+            } else if(modeType === 'bezier') {
+                bezierParams.rotation = parseInt(adjSlider1.value) * Math.PI / 180;
+                bezierParams.steep = parseInt(adjSlider2.value);
+                const rot = bezierParams.rotation;
+                const maxDev = (bezierParams.steep/100*250+20);
+                const cx = bezierParams.cx, cy = bezierParams.cy, span = bezierParams.span;
+                const r = (x,y) => ({ x: cx+(x*Math.cos(rot)-y*Math.sin(rot)), y: cy+(x*Math.sin(rot)+y*Math.cos(rot)) });
+                bezierParams.points = [r(-span/2,0), r(-span/6,maxDev/2), r(span/6,-maxDev/2), r(span/2,0)];
+            }
+            updateLabels(); drawRef();
+        }
+
+        function updateLabels() {
+            if(modeType === 'line') {
+                adjVal1.innerText = adjSlider1.value + "°"; adjVal2.innerText = adjSlider2.value + "px";
+                adjLabel1.innerText = "Angle"; adjLabel2.innerText = "Length";
+                document.getElementById('adj-row-2').classList.remove('hidden'); document.getElementById('adj-row-3').classList.add('hidden');
+            } else if(modeType === 'arc') {
+                adjVal1.innerText = adjSlider1.value + "°"; adjVal2.innerText = adjSlider2.value + "°"; adjVal3.innerText = adjSlider3.value + "px";
+                adjLabel1.innerText = "Start Angle"; adjLabel2.innerText = "Sweep Angle"; adjLabel3.innerText = "Radius";
+                document.getElementById('adj-row-2').classList.remove('hidden'); document.getElementById('adj-row-3').classList.remove('hidden');
+            } else {
+                adjVal1.innerText = adjSlider1.value + "°"; adjVal2.innerText = adjSlider2.value + "%";
+                adjLabel1.innerText = "Rotation"; adjLabel2.innerText = "Intensity";
+                document.getElementById('adj-row-2').classList.remove('hidden'); document.getElementById('adj-row-3').classList.add('hidden');
+            }
+        }
+
+        function calculateStability(pts, type = 'line') {
+            if (pts.length < 5) return 100;
+            if (type === 'line') {
+                const start = pts[0], end = pts[pts.length - 1];
+                const lineDx = end.x - start.x;
+                const lineDy = end.y - start.y;
+                const lineLen = Math.hypot(lineDx, lineDy);
+                if (lineLen < 5) return 100;
+                let sumDeviation = 0, sumJitter = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const dev = Math.abs(lineDy * p.x - lineDx * p.y + end.x * start.y - end.y * start.x) / lineLen;
+                    sumDeviation += dev;
+                    if (i > 0) {
+                        const prev = pts[i-1], segAngle = Math.atan2(p.y - prev.y, p.x - prev.x);
+                        if (i > 1) {
+                            const prevSegAngle = Math.atan2(prev.y - pts[i-2].y, prev.x - pts[i-2].x);
+                            let diff = Math.abs(segAngle - prevSegAngle);
+                            while (diff > Math.PI) diff -= 2 * Math.PI;
+                            sumJitter += Math.abs(diff);
+                        }
+                    }
+                }
+                const devScore = Math.max(0, 100 - ((sumDeviation / pts.length) * 12)); 
+                const jitScore = Math.max(0, 100 - ((sumJitter / pts.length) * 450));
+                return (devScore * 0.7 + jitScore * 0.3);
+            }
+            let angles = [];
+            for (let i = 1; i < pts.length; i++) angles.push(Math.atan2(pts[i].y - pts[i-1].y, pts[i].x - pts[i-1].x));
+            let angularChanges = [];
+            for (let i = 1; i < angles.length; i++) {
+                let diff = angles[i] - angles[i-1];
+                while (diff > Math.PI) diff -= 2 * Math.PI;
+                while (diff < -Math.PI) diff += 2 * Math.PI;
+                angularChanges.push(diff);
+            }
+            let smoothedChanges = [];
+            const windowSize = 3;
+            for (let i = 0; i < angularChanges.length - windowSize; i++) {
+                let sum = 0;
+                for (let j = 0; j < windowSize; j++) sum += angularChanges[i+j];
+                smoothedChanges.push(sum / windowSize);
+            }
+            let mean = smoothedChanges.reduce((a, b) => a + b, 0) / (smoothedChanges.length || 1);
+            let variance = smoothedChanges.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (smoothedChanges.length || 1);
+            let jitter = 0;
+            for (let i = 1; i < angularChanges.length; i++) jitter += Math.abs(angularChanges[i] - angularChanges[i-1]);
+            jitter /= (angularChanges.length || 1);
+            const varMult = type === 'bezier' ? 2200 : 3200;
+            const jitterMult = type === 'bezier' ? 45 : 85;
+            const varScore = Math.max(0, 100 - (variance * varMult)); 
+            const jitterScore = Math.max(0, 100 - (jitter * jitterMult));
+            return (varScore * 0.5 + jitterScore * 0.5);
+        }
+
+        function calculateWeightedMinimum(values) {
+            const minVal = Math.min(...values);
+            const sum = values.reduce((a, b) => a + b, 0);
+            const avg = sum / values.length;
+            return (minVal * 0.7) + (avg * 0.3);
+        }
+
+        function analyzeDrawing() {
+            if (points.length < 5) return;
+            let dist = 0; for(let i=1; i<points.length; i++) dist += Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
+            if (dist < 60) { showError(); clearDrawArea(); return; }
+            
+            hasDrawnInCurrentRound = true;
+            nextBtn.disabled = false;
+            
+            // Lock attempts only in test mode
+            if (currentMode === 'test') {
+                attemptLocked = true; 
+            }
+
+            let breakdown;
+            if (bezierParams) breakdown = analyzeBezier(points, dist);
+            else if (arcParams) breakdown = analyzeArc(points, dist);
+            else breakdown = analyzeLine(points, dist);
+            
+            const measureLen = document.getElementById('line-length-toggle').checked;
+            const metricValues = [breakdown.angleScore, breakdown.stabilityScore];
+            if (modeType === 'line' && measureLen) metricValues.push(breakdown.lengthScore);
+            const finalScore = calculateWeightedMinimum(metricValues);
+
+            if (currentMode === 'test') {
+                testScores.push(finalScore);
+                document.getElementById('ref-attempt-count').innerText = `${testScores.length}/10`;
+                if (testScores.length >= TEST_MAX_STEPS) { 
+                    setTimeout(showFinalCalibration, 800); 
+                    return; 
+                }
+            } else { 
+                refAttemptCount++;
+                document.getElementById('ref-attempt-count').innerText = refAttemptCount; 
+            }
+            
+            if (document.getElementById('show-correct-toggle').checked && breakdown.ideal) drawGhostTrace(breakdown.ideal);
+            showFeedback(finalScore, breakdown);
+        }
+
+        function analyzeLine(pts, drawnLen) {
+            const startPt = pts[0], endPt = pts[pts.length - 1];
+            const dx = endPt.x - startPt.x, dy = endPt.y - startPt.y;
+            const targetRad = (lineParams.angle * Math.PI) / 180;
+            const targetUnitX = Math.cos(targetRad), targetUnitY = -Math.sin(targetRad); 
+            const dot = (dx * targetUnitX) + (dy * targetUnitY);
+            const direction = dot >= 0 ? 1 : -1;
+            const idealEnd = { x: startPt.x + lineParams.length * targetUnitX * direction, y: startPt.y + lineParams.length * targetUnitY * direction };
+            const stabilityScore = calculateStability(pts, 'line');
+            let drawnAngleDeg = (Math.atan2(-dy, dx) * 180 / Math.PI + 360) % 360;
+            let diff = Math.abs(lineParams.angle - (drawnAngleDeg % 180));
+            if (diff > 90) diff = 180 - diff;
+            const angleScore = Math.max(0, 100 - (diff * 5.5)); 
+            const lengthScore = Math.max(0, 100 - (Math.abs(drawnLen - lineParams.length) / lineParams.length * 100));
+            return { angleScore, stabilityScore, lengthScore, ideal: { type: 'line', start: startPt, end: idealEnd } };
+        }
+
+        function analyzeArc(pts) {
+            const startPt = pts[0], radius = arcParams.radius, sweepRad = arcParams.sweepRad;
+            const refStartPt = { x: arcParams.centerX + radius * Math.cos(arcParams.startAngle), y: arcParams.centerY + radius * Math.sin(arcParams.startAngle) };
+            const refEndPt = { x: arcParams.centerX + radius * Math.cos(arcParams.endAngle), y: arcParams.centerY + radius * Math.sin(arcParams.endAngle) };
+            const startAtRefEnd = Math.hypot(startPt.x - refEndPt.x, startPt.y - refEndPt.y) < Math.hypot(startPt.x - refStartPt.x, startPt.y - refStartPt.y);
+            const anchor = startAtRefEnd ? refEndPt : refStartPt;
+            const ghostCenter = { x: arcParams.centerX + (startPt.x - anchor.x), y: arcParams.centerY + (startPt.y - anchor.y) };
+            let totalSweepRaw = 0, prevA = Math.atan2(pts[0].y - ghostCenter.y, pts[0].x - ghostCenter.x);
+            for(let i=1; i<pts.length; i++) {
+                let currA = Math.atan2(pts[i].y - ghostCenter.y, pts[i].x - ghostCenter.x);
+                let diff = currA - prevA;
+                while(diff > Math.PI) diff -= 2*Math.PI;
+                while(diff < -Math.PI) diff += 2*Math.PI;
+                totalSweepRaw += diff; prevA = currA;
+            }
+            const finalStartA = Math.atan2(startPt.y - ghostCenter.y, startPt.x - ghostCenter.x);
+            let dev = 0; pts.forEach(p => dev += Math.abs(Math.hypot(p.x - ghostCenter.x, p.y - ghostCenter.y) - radius));
+            const accuracy = Math.max(0, 100 - ((dev / pts.length) * 5.5));
+            const stabilityScore = calculateStability(pts, 'arc');
+            const sweepScore = Math.max(0, 100 - (Math.abs(Math.abs(totalSweepRaw) - sweepRad) / sweepRad) * 80);
+            return { angleScore: (accuracy * 0.7 + sweepScore * 0.3), stabilityScore, lengthScore: 0, ideal: { cx: ghostCenter.x, cy: ghostCenter.y, r: radius, startA: finalStartA, endA: startAtRefEnd ? finalStartA - sweepRad : finalStartA + sweepRad, type: 'arc', anti: startAtRefEnd } };
+        }
+
+        function analyzeBezier(pts) {
+            const ref = bezierParams.points, startPt = pts[0];
+            const isReverse = Math.hypot(startPt.x-ref[3].x, startPt.y-ref[3].y) < Math.hypot(startPt.x-ref[0].x, startPt.y-ref[0].y);
+            const ideal = isReverse ? [...ref].reverse() : [...ref];
+            const shifted = ideal.map(p => ({ x: p.x + (startPt.x - ideal[0].x), y: p.y + (startPt.y - ideal[0].y) }));
+            let totalDev = 0;
+            pts.forEach(p => {
+                let minDist = 999;
+                for(let t=0; t<=1; t+=0.1) {
+                    const t1=1-t;
+                    const tx = t1**3*shifted[0].x + 3*t1**2*t*shifted[1].x + 3*t1*t**2*shifted[2].x + t**3*shifted[3].x;
+                    const ty = t1**3*shifted[0].y + 3*t1**2*t*shifted[1].y + 3*t1*t**2*shifted[2].y + t**3*shifted[3].y;
+                    minDist = Math.min(minDist, Math.hypot(p.x-tx, p.y-ty));
+                }
+                totalDev += minDist;
+            });
+            return { angleScore: Math.max(0, 100 - (Math.max(0, (totalDev / pts.length) - 1.0) * 2.0)), stabilityScore: calculateStability(pts, 'bezier'), lengthScore: 0, ideal: { type: 'bezier', pts: shifted } };
+        }
+
+        function drawGhostTrace(ideal) {
+            drawCtx.save(); drawCtx.setLineDash([5, 5]); drawCtx.lineWidth = 2; drawCtx.strokeStyle = 'rgba(225, 29, 72, 0.6)';
+            drawCtx.beginPath();
+            if(ideal.type === 'line') { drawCtx.moveTo(ideal.start.x, ideal.start.y); drawCtx.lineTo(ideal.end.x, ideal.end.y); }
+            else if(ideal.type === 'arc') { drawCtx.arc(ideal.cx, ideal.cy, ideal.r, ideal.startA, ideal.endA, !!ideal.anti); }
+            else { drawCtx.moveTo(ideal.pts[0].x, ideal.pts[0].y); drawCtx.bezierCurveTo(ideal.pts[1].x, ideal.pts[1].y, ideal.pts[2].x, ideal.pts[2].y, ideal.pts[3].x, ideal.pts[3].y); }
+            drawCtx.stroke(); drawCtx.restore();
+        }
+
+        function showFeedback(total, breakdown) {
+            feedbackBox.style.opacity = '1';
+            const data = getGradingData(total);
+            feedbackTitle.innerText = data.label;
+            feedbackTitle.className = "text-2xl font-black uppercase " + (data.label === "PRO ARTIST" ? "pro-artist" : "");
+            feedbackTitle.style.color = data.label === "PRO ARTIST" ? "" : data.color;
+            finalScorePill.innerText = Math.round(total) + "%";
+            finalScorePill.className = "text-4xl font-black " + (data.label === "PRO ARTIST" ? "pro-artist" : "");
+            finalScorePill.style.color = data.label === "PRO ARTIST" ? "" : data.color;
+            document.getElementById('m1-val').innerText = Math.round(breakdown.angleScore) + "%";
+            document.getElementById('m2-val').innerText = Math.round(breakdown.stabilityScore) + "%";
+            document.getElementById('m3-row').classList.toggle('hidden', modeType !== 'line' || !document.getElementById('line-length-toggle').checked);
+            document.getElementById('m3-val').innerText = Math.round(breakdown.lengthScore) + "%";
+        }
+
+        function nextRound(initial = false) {
+            if (currentMode === 'test' && !hasDrawnInCurrentRound && !initial) return;
+
+            attemptLocked = false; 
+            hasDrawnInCurrentRound = false; 
+            
+            if (currentMode === 'test') {
+                nextBtn.disabled = true;
+            } else {
+                nextBtn.disabled = false;
+            }
+
+            clearDrawArea(); 
+            feedbackBox.style.opacity = '0';
+            
+            if (modeType === 'line') generateLineReference();
+            else if (modeType === 'arc') generateArcReference();
+            else generateBezierReference();
+        }
+
+        function clearDrawArea() { drawCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE); drawCtx.strokeStyle = '#1a1a1a'; drawCtx.lineWidth = 3; drawCtx.lineCap = 'round'; }
+        function showError() { document.getElementById('error-toast').classList.remove('hidden'); setTimeout(() => document.getElementById('error-toast').classList.add('hidden'), 1500); }
+        
+        function showFinalCalibration() {
+            const avg = Math.round(testScores.reduce((a,b)=>a+b,0)/TEST_MAX_STEPS);
+            const data = getGradingData(avg);
+            const titleEl = document.getElementById('final-test-title');
+            const scoreEl = document.getElementById('final-test-score');
+            
+            titleEl.innerText = data.label;
+            scoreEl.innerText = avg + "%";
+            
+            titleEl.className = "text-4xl font-black uppercase mb-1";
+            scoreEl.className = "text-6xl font-black mb-6";
+            
+            if (data.label === "PRO ARTIST") {
+                titleEl.classList.add('pro-artist');
+                scoreEl.classList.add('pro-artist');
+                titleEl.style.color = "";
+                scoreEl.style.color = "";
+            } else {
+                titleEl.style.color = data.color;
+                scoreEl.style.color = data.color;
+            }
+            
+            document.getElementById('test-result-overlay').style.display = 'flex';
+        }
+
+        adjSlider1.oninput = updateFromSliders; adjSlider2.oninput = updateFromSliders; adjSlider3.oninput = updateFromSliders;
+
+        const getCoord = (e) => {
+            const rect = drawCanvas.getBoundingClientRect();
+            let cx, cy;
+            if (e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+            else { cx = e.clientX; cy = e.clientY; }
+            return { x: cx - rect.left, y: cy - rect.top };
+        }
+
+        const handleStart = (e) => { if(attemptLocked) return; isDrawing = true; points = [getCoord(e)]; clearDrawArea(); drawCtx.beginPath(); drawCtx.moveTo(points[0].x, points[0].y); };
+        const handleMove = (e) => { if(!isDrawing) return; const c = getCoord(e); points.push(c); drawCtx.lineTo(c.x, c.y); drawCtx.stroke(); if(e.cancelable) e.preventDefault(); };
+        const handleEnd = () => { if(!isDrawing) return; isDrawing = false; analyzeDrawing(); };
+
+        drawCanvas.addEventListener('mousedown', handleStart); window.addEventListener('mousemove', handleMove); window.addEventListener('mouseup', handleEnd);
+        drawCanvas.addEventListener('touchstart', (e) => { if(e.cancelable) e.preventDefault(); handleStart(e); }, {passive: false});
+        window.addEventListener('touchmove', handleMove, {passive: false}); window.addEventListener('touchend', handleEnd);
+        window.onkeydown = (e) => { if(e.key === 'r') nextRound(); };
+        showMenu(); setModeTab('line');
+    </script>
+</body>
+</html>
