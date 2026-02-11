@@ -586,10 +586,10 @@
         }
 
         function analyzeArc(pts) {
-            const startPt = pts[0], radius = arcParams.radius, sweepRad = arcParams.sweepRad;
+            const startPt = pts[0], endPt = pts[pts.length - 1], radius = arcParams.radius, sweepRad = arcParams.sweepRad;
             const refStartPt = { x: arcParams.centerX + radius * Math.cos(arcParams.startAngle), y: arcParams.centerY + radius * Math.sin(arcParams.startAngle) };
             const refEndPt = { x: arcParams.centerX + radius * Math.cos(arcParams.endAngle), y: arcParams.centerY + radius * Math.sin(arcParams.endAngle) };
-            const startAtRefEnd = Math.hypot(startPt.x - refEndPt.x, startPt.y - refEndPt.y) < Math.hypot(startPt.x - refStartPt.x, startPt.y - refStartPt.y);
+            const startAtRefEnd = ((startPt.x - endPt.x) * (refStartPt.x - refEndPt.x) + (startPt.y - endPt.y) * (refStartPt.y - refEndPt.y)) < 0;
             const anchor = startAtRefEnd ? refEndPt : refStartPt;
             const ghostCenter = { x: arcParams.centerX + (startPt.x - anchor.x), y: arcParams.centerY + (startPt.y - anchor.y) };
             let totalSweepRaw = 0, prevA = Math.atan2(pts[0].y - ghostCenter.y, pts[0].x - ghostCenter.x);
@@ -609,8 +609,8 @@
         }
         
         function analyzeBezier(pts) {
-            const ref = bezierParams.points, startPt = pts[0];
-            const isReverse = Math.hypot(startPt.x-ref[3].x, startPt.y-ref[3].y) < Math.hypot(startPt.x-ref[0].x, startPt.y-ref[0].y);
+            const ref = bezierParams.points, startPt = pts[0], endPt = pts[pts.length - 1];
+            const isReverse = ((startPt.x - endPt.x) * (ref[3].x - ref[0].x) + (startPt.y - endPt.y) * (ref[3].y - ref[0].y)) > 0;
             const ideal = isReverse ? [...ref].reverse() : [...ref];
             const shifted = ideal.map(p => ({ x: p.x + (startPt.x - ideal[0].x), y: p.y + (startPt.y - ideal[0].y) }));
             let totalDev = 0;
