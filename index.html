@@ -255,6 +255,7 @@
             testScores = []; 
             refAttemptCount = 0;
             hasDrawnInCurrentRound = false;
+            attemptLocked = false;
             
             document.getElementById('menu-screen').classList.add('hidden');
             document.getElementById('app-screen').classList.remove('hidden');
@@ -330,19 +331,25 @@
             arcParams = null; lineParams = null;
             const span = 150 + Math.random() * 200;
             const steep = parseInt(menuSteepSlider.value);
+            const maxDev = (steep / 100 * 250 + 20);
             const rotation = Math.random() * Math.PI * 2;
             const randPos = document.getElementById('rand-pos-toggle').checked;
             const cx = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*100 : 0);
             const cy = CANVAS_SIZE/2 + (randPos ? (Math.random()-0.5)*100 : 0);
-            
-            bezierParams = { span, rotation, steep, cx, cy };
+            const rot = (x, y) => ({
+                x: cx + (x * Math.cos(rotation) - y * Math.sin(rotation)),
+                y: cy + (x * Math.sin(rotation) + y * Math.cos(rotation))
+            });
+            const p1 = rot(-span/2, 0);
+            const p2 = rot(-span/6, (Math.random()-0.5) * maxDev);
+            const p3 = rot(span/6, (Math.random()-0.5) * maxDev);
+            const p4 = rot(span/2, 0);
+            bezierParams = { points: [p1, p2, p3, p4], span, rotation, steep, cx, cy };
             adjSlider1.min = 0; adjSlider1.max = 360;
             adjSlider1.value = Math.round(rotation * 180 / Math.PI) % 360;
             adjSlider2.min = 1; adjSlider2.max = 100;
             adjSlider2.value = steep;
-            updateLabels(); 
-            updateBezierPoints();
-            drawRef();
+            updateLabels(); drawRef();
         }
 
         function updateBezierPoints() {
@@ -519,7 +526,11 @@
             
             hasDrawnInCurrentRound = true;
             nextBtn.disabled = false;
-            if (currentMode === 'test') attemptLocked = true; 
+            
+            // Critical logic for locking after drawing
+            if (currentMode === 'test') {
+                attemptLocked = true; 
+            }
 
             let breakdown;
             if (modeType === 'bezier') breakdown = analyzeBezier(points, dist);
@@ -535,8 +546,14 @@
             if (currentMode === 'test') {
                 testScores.push({ total: finalScore, accuracy: breakdown.angleScore, stability: breakdown.stabilityScore, length: breakdown.lengthScore });
                 document.getElementById('ref-attempt-count').innerText = `${testScores.length}/10`;
+                
+                // If this was the 10th stroke, stop everything
                 if (testScores.length >= TEST_MAX_STEPS) { 
+                    attemptLocked = true; // Ensure no more drawing
                     setTimeout(showFinalCalibration, 800); 
+                    // Show final visual feedback before overlay
+                    if (document.getElementById('show-correct-toggle').checked && breakdown.ideal) drawGhostTrace(breakdown.ideal);
+                    showFeedback(finalScore, breakdown);
                     return; 
                 }
             } else { 
@@ -618,6 +635,14 @@
             else { drawCtx.moveTo(ideal.pts[0].x, ideal.pts[0].y); drawCtx.bezierCurveTo(ideal.pts[1].x, ideal.pts[1].y, ideal.pts[2].x, ideal.pts[2].y, ideal.pts[3].x, ideal.pts[3].y); }
             drawCtx.stroke(); drawCtx.restore();
         }
+        function drawGhostTrace(ideal) {
+            drawCtx.save(); drawCtx.setLineDash([5, 5]); drawCtx.lineWidth = 2; drawCtx.strokeStyle = 'rgba(225, 29, 72, 0.6)';
+            drawCtx.beginPath();
+            if(ideal.type === 'line') { drawCtx.moveTo(ideal.start.x, ideal.start.y); drawCtx.lineTo(ideal.end.x, ideal.end.y); }
+            else if(ideal.type === 'arc') { drawCtx.arc(ideal.cx, ideal.cy, ideal.r, ideal.startA, ideal.endA, !!ideal.anti); }
+            else { drawCtx.moveTo(ideal.pts[0].x, ideal.pts[0].y); drawCtx.bezierCurveTo(ideal.pts[1].x, ideal.pts[1].y, ideal.pts[2].x, ideal.pts[2].y, ideal.pts[3].x, ideal.pts[3].y); }
+            drawCtx.stroke(); drawCtx.restore();
+        }
 
         function showFeedback(total, breakdown) {
             feedbackBox.style.opacity = '1';
@@ -635,6 +660,9 @@
         }
 
         function nextRound(initial = false) {
+            // Can't go to next round if test is finished
+            if (currentMode === 'test' && testScores.length >= TEST_MAX_STEPS) return;
+            
             if (currentMode === 'test' && !hasDrawnInCurrentRound && !initial) return;
             attemptLocked = false; 
             hasDrawnInCurrentRound = false; 
@@ -723,7 +751,10 @@
         }
 
         const handleStart = (e) => { 
+            // In test mode, if we already have 10 scores, do NOT allow drawing
+            if(currentMode === 'test' && testScores.length >= TEST_MAX_STEPS) return;
             if(attemptLocked) return; 
+            
             isDrawing = true; 
             drawStartTime = Date.now();
             points = [getCoord(e)]; 
